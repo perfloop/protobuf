@@ -381,11 +381,27 @@ void _upb_FileDef_Create(upb_DefBuilder* ctx,
   file->dep_count = n;
   file->deps = UPB_DEFBUILDER_ALLOCARRAY(ctx, const upb_FileDef*, n);
 
-  for (size_t i = 0; i < n; i++) {
+  weak_deps = google_protobuf_FileDescriptorProto_weak_dependency(file_proto, &n);
+  file->weak_dep_count = n;
+  file->weak_deps = UPB_DEFBUILDER_ALLOCARRAY(ctx, const int32_t, n);
+  int32_t* mutable_weak_deps = (int32_t*)file->weak_deps;
+  bool* is_weak_dep = UPB_DEFBUILDER_ALLOCARRAY(ctx, bool, file->dep_count);
+  memset(is_weak_dep, 0, file->dep_count * sizeof(bool));
+
+  for (int i = 0; i < file->weak_dep_count; i++) {
+    int32_t dep_idx = weak_deps[i];
+    if (dep_idx < 0 || dep_idx >= file->dep_count) {
+      _upb_DefBuilder_Errf(ctx, "weak_dep %d is out of range", (int)dep_idx);
+    }
+    mutable_weak_deps[i] = dep_idx;
+    is_weak_dep[dep_idx] = true;
+  }
+
+  for (int i = 0; i < file->dep_count; i++) {
     upb_StringView str = strs[i];
     file->deps[i] =
         upb_DefPool_FindFileByNameWithSize(ctx->symtab, str.data, str.size);
-    if (!file->deps[i]) {
+    if (!file->deps[i] && !is_weak_dep[i]) {
       _upb_DefBuilder_Errf(ctx,
                            "Depends on file '" UPB_STRINGVIEW_FORMAT
                            "', but it has not been loaded",
@@ -403,18 +419,6 @@ void _upb_FileDef_Create(upb_DefBuilder* ctx,
                            (int)public_deps[i]);
     }
     mutable_public_deps[i] = public_deps[i];
-  }
-
-  weak_deps = google_protobuf_FileDescriptorProto_weak_dependency(file_proto, &n);
-  file->weak_dep_count = n;
-  file->weak_deps = UPB_DEFBUILDER_ALLOCARRAY(ctx, const int32_t, n);
-  int32_t* mutable_weak_deps = (int32_t*)file->weak_deps;
-  for (size_t i = 0; i < n; i++) {
-    if (weak_deps[i] < 0 || weak_deps[i] >= file->dep_count) {
-      _upb_DefBuilder_Errf(ctx, "weak_dep %d is out of range",
-                           (int)weak_deps[i]);
-    }
-    mutable_weak_deps[i] = weak_deps[i];
   }
 
   const upb_StringView* option_deps;
